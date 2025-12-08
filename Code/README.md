@@ -20,6 +20,7 @@ This is a frame-frame grayscaled image of the mouth-features
 
 
 # Model Architecture
+ADD HERE
 
 ## Demo app
 Once a checkpoint exists in `models/`, open the app folder (Streamlit example):
