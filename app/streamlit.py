@@ -1,180 +1,194 @@
-import streamlit as st
+import os
 import cv2
 import numpy as np
 import tempfile
-import mediapipe as mp
-import os
 import imageio
+import tensorflow as tf
+import streamlit as st
 
-MAX_FRAMES_PREVIEW = 25
-FRAME_WIDTH, FRAME_HEIGHT = 128, 128
+# config
+vocab = [x for x in "abcdefghijklmnopqrstuvwxyz'?!123456789 "]
+
+char_to_num = tf.keras.layers.StringLookup(vocabulary=vocab, oov_token="")
+num_to_char = tf.keras.layers.StringLookup(
+    vocabulary=char_to_num.get_vocabulary(), oov_token="", invert=True
+)
+
+# model
+def build_lipnet_model() -> tf.keras.Model:
+    from tensorflow.keras.models import Sequential
+    from tensorflow.keras.layers import (
+        Conv3D,
+        LSTM,
+        Dense,
+        Dropout,
+        Bidirectional,
+        MaxPool3D,
+        Activation,
+        TimeDistributed,
+        Flatten,
+    )
+
+    model = Sequential()
+    model.add(Conv3D(128, 3, input_shape=(75, 46, 140, 1), padding="same"))
+    model.add(Activation("relu"))
+    model.add(MaxPool3D((1, 2, 2)))
+
+    model.add(Conv3D(256, 3, padding="same"))
+    model.add(Activation("relu"))
+    model.add(MaxPool3D((1, 2, 2)))
+
+    model.add(Conv3D(75, 3, padding="same"))
+    model.add(Activation("relu"))
+    model.add(MaxPool3D((1, 2, 2)))
+
+    model.add(TimeDistributed(Flatten()))
+
+    model.add(
+        Bidirectional(
+            LSTM(128, kernel_initializer="Orthogonal", return_sequences=True)
+        )
+    )
+    model.add(Dropout(0.5))
+
+    model.add(
+        Bidirectional(
+            LSTM(128, kernel_initializer="Orthogonal", return_sequences=True)
+        )
+    )
+    model.add(Dropout(0.5))
+
+    model.add(
+        Dense(
+            char_to_num.vocabulary_size() + 1,
+            kernel_initializer="he_normal",
+            activation="softmax",
+            dtype="float32",
+        )
+    )
+
+    return model
 
 
 @st.cache_resource
-def load_face_mesh():
-    mp_face_mesh = mp.solutions.face_mesh
-    return mp_face_mesh.FaceMesh(
-        static_image_mode=False,
-        max_num_faces=1,
-        refine_landmarks=True,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5,
-    )
+def load_lipnet_model() -> tf.keras.Model:
+    model = build_lipnet_model()
+    weights_path = os.path.join("models", "checkpoint_fast.weights.h5")
+    model.load_weights(weights_path)
+    return model
 
 
-def extract_lip_region(frame, face_mesh, debug_info, frame_count):
-    try:
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    except Exception as ex:
-        debug_info.append(f"Frame {frame_count}: Failed to convert to RGB - {ex}")
-        return None
+def load_video_for_model(path: str) -> tf.Tensor:
+    cap = cv2.VideoCapture(path)
+    frames = []
 
-    try:
-        results = face_mesh.process(rgb_frame)
-    except Exception as ex:
-        debug_info.append(f"Frame {frame_count}: FaceMesh processing failed - {ex}")
-        return None
-
-    if not results.multi_face_landmarks:
-        debug_info.append(f"Frame {frame_count}: No face landmarks detected")
-        return None
-
-    h, w, _ = frame.shape
-    landmarks = results.multi_face_landmarks[0].landmark
-
-    # Lip landmark indices (outer + inner lips) for MediaPipe FaceMesh
-    lip_indices = [
-        61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 78,
-        95, 88, 178, 87, 14, 317, 402, 318, 324, 308, 415, 310
-    ]
-
-    xs, ys = [], []
-    for idx in lip_indices:
-        x = int(landmarks[idx].x * w)
-        y = int(landmarks[idx].y * h)
-        xs.append(x)
-        ys.append(y)
-
-    if not xs or not ys:
-        debug_info.append(f"Frame {frame_count}: Lip landmarks empty")
-        return None
-
-    x_min, x_max = max(min(xs) - 10, 0), min(max(xs) + 10, w)
-    y_min, y_max = max(min(ys) - 10, 0), min(max(ys) + 10, h)
-
-    if x_min >= x_max or y_min >= y_max:
-        debug_info.append(f"Frame {frame_count}: Invalid lip bounding box")
-        return None
-
-    lip_region = frame[y_min:y_max, x_min:x_max]
-    if lip_region.size == 0:
-        debug_info.append(f"Frame {frame_count}: Lip region is empty")
-        return None
-
-    try:
-        # Better interpolation for nicer-looking crops
-        lip_region = cv2.resize(
-            lip_region, (FRAME_WIDTH, FRAME_HEIGHT),
-            interpolation=cv2.INTER_CUBIC
-        )
-        lip_region = cv2.cvtColor(lip_region, cv2.COLOR_BGR2RGB)
-    except Exception as ex:
-        debug_info.append(f"Frame {frame_count}: Failed to resize/convert lip region - {ex}")
-        return None
-
-    debug_info.append(f"Frame {frame_count}: Lip region extracted successfully")
-    return lip_region
-
-
-def process_preview_frames(video_path, max_frames=MAX_FRAMES_PREVIEW):
-
-    debug_info = []
-    lip_frames = []
-    lips_found = False
-
-    face_mesh = load_face_mesh()
-
-    if not os.path.exists(video_path):
-        debug_info.append(f"Video path does not exist: {video_path}")
-        return lip_frames, lips_found, debug_info
-
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        debug_info.append(f"Failed to open video: {video_path}")
-        return lip_frames, lips_found, debug_info
-
-    debug_info.append(f"Opened video: {video_path}")
-
-    frame_count = 0
-
-    while frame_count < max_frames:
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    for _ in range(frame_count):
         ret, frame = cap.read()
-        if not ret:
-            debug_info.append(f"Frame {frame_count}: Failed to read (end of video or error)")
-            break
-
-        frame_count += 1
-        debug_info.append(f"Frame {frame_count}: Read successfully")
-
-        lip_region = extract_lip_region(frame, face_mesh, debug_info, frame_count)
-        if lip_region is not None:
-            lip_frames.append(lip_region)
-            lips_found = True
-
+        if not ret or frame is None:
+            continue
+        frame = tf.image.rgb_to_grayscale(frame)
+        frames.append(frame[190:236, 80:220, :])
     cap.release()
 
-    if lips_found:
-        debug_info.append(f"Lips detected in {len(lip_frames)} frame(s).")
-    else:
-        debug_info.append("No lips detected in any of the preview frames.")
+    if len(frames) == 0:
+        frames = [tf.zeros((46, 140, 1), dtype=tf.float32) for _ in range(75)]
+    elif len(frames) < 75:
+        while len(frames) < 75:
+            frames.append(frames[-1])
+    elif len(frames) > 75:
+        frames = frames[:75]
 
-    return lip_frames, lips_found, debug_info
+    frames = tf.stack(frames)
+
+    mean = tf.math.reduce_mean(frames)
+    std = tf.math.reduce_std(tf.cast(frames, tf.float32))
+    std = tf.maximum(std, 1e-8)
+    frames = tf.cast((frames - mean), tf.float32) / std
+
+    return frames
 
 
-def create_preview_gif(frames, output_path, num_loops=8, fps=10, scale=2):
-    
-    # Normalize to 0–255 and convert to uint8
+def decode_prediction(y_pred: tf.Tensor) -> str:
+    input_len = tf.fill([tf.shape(y_pred)[0]], tf.shape(y_pred)[1])
+    decoded, _ = tf.keras.backend.ctc_decode(
+        y_pred, input_length=input_len, greedy=False
+    )
+    decoded = decoded[0][0]
+
+    text = tf.strings.reduce_join(num_to_char(decoded)).numpy().decode("utf-8")
+    return text
+
+
+def predict_text_from_video(video_path: str) -> str:
+    frames = load_video_for_model(video_path)
+    x = tf.expand_dims(frames, axis=0)
+
+    model = load_lipnet_model()
+    y_pred = model(x, training=False)
+
+    return decode_prediction(y_pred)
+
+
+# looping GIF and sample frames
+def create_preview_gif(frames: np.ndarray, output_path: str,
+                       num_loops: int = 8, fps: int = 10, scale: int = 2):
+
     frames_uint8 = (
-        (frames - frames.min()) /
-        (frames.max() - frames.min() + 1e-8) * 255
+        (frames - frames.min()) / (frames.max() - frames.min() + 1e-8) * 255
     ).astype(np.uint8)
 
-    # (T, H, W, 1) -> (T, H, W)
     frames_uint8 = np.squeeze(frames_uint8, axis=-1)
 
-    # Upscale each frame so the GIF appears larger
     t, h, w = frames_uint8.shape
     upscaled_frames = [
         cv2.resize(frame, (w * scale, h * scale), interpolation=cv2.INTER_NEAREST)
         for frame in frames_uint8
     ]
 
-    # Repeat the short sequence multiple times for a longer looping animation
     all_frames = upscaled_frames * num_loops
-
-    # loop=0 = infinite loop
     imageio.mimsave(output_path, all_frames, fps=fps, loop=0)
 
 
+def tensor_to_sample_frames(frames: tf.Tensor, num_display: int = 5):
+
+    frames_np = frames.numpy()
+    T = frames_np.shape[0]
+
+    num_display = min(num_display, T)
+    step = max(1, T // num_display)
+    indices = list(range(0, T, step))[:num_display]
+
+    display_frames = []
+    for idx in indices:
+        frame = frames_np[idx, :, :, 0]
+        f = (frame - frame.min()) / (frame.max() - frame.min() + 1e-8) * 255
+        f = f.astype(np.uint8)
+        f = cv2.resize(f, (140 * 2, 46 * 2), interpolation=cv2.INTER_NEAREST)
+        display_frames.append(f)
+
+    return display_frames, indices
+
+# streamlit
 def main():
-    st.title("Lip Reading Preview")
+    st.title("Lipreading Prediction Demo")
 
     st.markdown(
-        f"""
-        1. Upload a video of a speaking face (**mp4 / avi / mov / mpg / mpeg**).
-        2. Click **Let's Start!** to extract up to **{MAX_FRAMES_PREVIEW}** lip frames.
-        3. View an animated black-and-white GIF preview and sample frames.
-        4. Observe the predicted text output (placeholder for now).
+        """
+        1. Upload a video of a speaking face.
+        2. Click **Let's Start!** to:
+           - preprocess the video into lip-region frames
+           - show sample grayscale frames and looping GIF
+           - run model and display the predicted output text
         """
     )
 
     uploaded_file = st.file_uploader(
         "Upload a video",
-        type=["mp4", "avi", "mov", "mpg", "mpeg"]
+        type=["mpg", "mp4", "avi", "mov", "mpeg"],
     )
 
     if uploaded_file is not None:
-        # Save uploaded file to a temporary location
         suffix = os.path.splitext(uploaded_file.name)[1]
         tfile = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
         tfile.write(uploaded_file.read())
@@ -182,68 +196,49 @@ def main():
         video_path = tfile.name
 
         if st.button("Let's Start!"):
-            with st.spinner("Processing frames..."):
-                lip_frames, lips_found, debug_info = process_preview_frames(video_path)
-
-            if lips_found and len(lip_frames) > 0:
-                st.success(f"Cropped lips from {len(lip_frames)} frames!")
-
-                st.markdown("### Sample Cropped Lip Frames")
-
-                num_display = min(5, len(lip_frames))
-                step = max(1, len(lip_frames) // num_display)
-                display_frames = [
-                    lip_frames[i] for i in range(0, len(lip_frames), step)
-                ][:num_display]
-
-                cols = st.columns(len(display_frames))
-                for i, frame in enumerate(display_frames):
-                    cols[i].image(
-                        frame,
-                        caption=f"Frame {i * step + 1}",
-                        use_container_width=True,
-                    )
-
-                st.markdown("### Grayscale Preview GIF & Predicted Output")
-
-                # Convert lip_frames (RGB) -> grayscale float32, shape (T, H, W, 1)
-                frames_gray = [
-                    cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY) for frame in lip_frames
-                ]
-                frames_gray = np.array(frames_gray, dtype=np.float32)
-                frames_gray = frames_gray[..., np.newaxis]
-
+            with st.spinner("Processing video and running LipNet model..."):
+                frames = load_video_for_model(video_path)
+                display_frames, indices = tensor_to_sample_frames(frames)
+                frames_np = frames.numpy()
                 gif_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".gif")
-                create_preview_gif(frames_gray, gif_temp.name, scale=2)
+                create_preview_gif(frames_np, gif_temp.name, scale=2)
 
                 with open(gif_temp.name, "rb") as f:
                     gif_bytes = f.read()
 
-                # Placeholder
-                predicted_text = "Predicted text will appear here once the model/output is available."
+                try:
+                    predicted_text = predict_text_from_video(video_path)
+                except Exception as ex:
+                    predicted_text = f"(Prediction failed: {ex})"
 
-                gif_col, text_col = st.columns([1, 1])
+            st.success("Processing complete!")
 
-                with gif_col:
-                    st.image(
-                        gif_bytes,
-                        caption="Lip Region GIF Preview",
-                        width=320,
-                    )
+            st.markdown("### Sample Cropped Lip Frames (Grayscale)")
+            cols = st.columns(len(display_frames))
+            for i, frame in enumerate(display_frames):
+                cols[i].image(
+                    frame,
+                    caption=f"Frame {indices[i] + 1}",
+                    use_container_width=True,
+                )
 
-                with text_col:
-                    st.markdown("**Predicted Output**")
-                    st.text_area(
-                        "Predicted transcription:",
-                        value=predicted_text,
-                        height=150,
-                    )
+            st.markdown("### Grayscale Preview GIF & Predicted Output")
+            gif_col, text_col = st.columns([1, 1])
 
-            else:
-                st.warning("No lips detected in the video.")
+            with gif_col:
+                st.image(
+                    gif_bytes,
+                    caption="Lip Region GIF Preview",
+                    width=320,
+                )
 
-            with st.expander("Debug Information"):
-                st.text("\n".join(debug_info))
+            with text_col:
+                st.markdown("**Predicted Output**")
+                st.text_area(
+                    "Model transcription:",
+                    value=predicted_text,
+                    height=150,
+                )
 
 
 if __name__ == "__main__":
