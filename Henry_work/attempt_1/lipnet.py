@@ -1,11 +1,9 @@
 # LipNet attempt w/ one speaker (s1) - Henry Hirsch
 
-
 # 0. install and import dependencies
 
-# !pip list
-
-# !pip install opencv-python matplotlib imageio gdown tensorflow
+#pip install opencv-python matplotlib imageio gdown tensorflow
+#pip list
 
 import os
 import cv2
