@@ -236,11 +236,6 @@ model.fit(train, validation_data=test, epochs=100, callbacks=[checkpoint_callbac
 
 # 5. make prediction
 
-url = 'https://drive.google.com/uc?id=1vWscXs4Vt0a_1IH1-ct2TCgXAZT-N3_Y' # download model checkpoints if needed
-output = 'checkpoints.zip'
-gdown.download(url, output, quiet=False)
-gdown.extractall('checkpoints.zip', 'models')
-
 model.load_weights('models/checkpoint.weights.h5') # load model checkpoint weights
 
 test_data = test.as_numpy_iterator()
