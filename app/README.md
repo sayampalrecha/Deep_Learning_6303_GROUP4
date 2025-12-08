@@ -17,6 +17,7 @@ Recommended Setup:
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
 
 **IMPORTANT:**
 Model was too large to upload to GitHub. Please download the "models" folder from [Google Drive](https://drive.google.com/drive/folders/18nZdxe_P3KdJYRGunXz2ue2N0yOJd-7I?usp=drive_link) and add within the "app" folder before running the Streamlit app.
