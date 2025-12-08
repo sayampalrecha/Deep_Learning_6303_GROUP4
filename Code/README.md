@@ -1,3 +1,4 @@
+
 # Deep_Learning_6303_GROUP4
 A lightweight implementation of LipNet, a deep-learning model for lip-reading from video. <br>
 This version focuses on simplicity by using less speaker than original paper while demonstrating core concepts:
@@ -20,4 +21,14 @@ This is a frame-frame grayscaled image of the mouth-features
 
 # Model Architecture
 
+## Demo app
+Once a checkpoint exists in `models/`, open the app folder (Streamlit example):
+```bash
+cd app 
+streamlit run app.py
+```
+
+## References
+- LipNet: “LipNet: End-to-End Sentence-level Lipreading” (Chung et al., 2016) – https://arxiv.org/abs/1611.01599
+- CTC tutorial: https://distill.pub/2017/ctc
 
