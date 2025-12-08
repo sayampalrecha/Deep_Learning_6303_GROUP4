@@ -19,11 +19,5 @@ This is a frame-frame grayscaled image of the mouth-features
 
 
 # Model Architecture
-<img width="2438" height="346" alt="Untitled diagram-2025-12-08-170612" src="https://github.com/user-attachments/assets/3cd2862e-195e-4eda-b7cc-db82e29fcafb" /><br>
-
-Input Shape: (75,46,140,1)<br>
-Kernel Size: 3x3x3 <br>
-Regularization: Dropout (0.5) and Batch Normalization <br>
-Optimizer: Adam <br>
 
 
