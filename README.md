@@ -31,7 +31,7 @@ Everything needed to preprocess data, train the lip-reader, and launch the demo 
 ```bash
 cd Code
 
-# optional: create virtual env
+#create virtual env
 python3 -m venv .venv
 source .venv/bin/activate
 
