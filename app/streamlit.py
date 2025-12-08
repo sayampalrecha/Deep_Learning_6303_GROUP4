@@ -6,8 +6,7 @@ import mediapipe as mp
 import os
 import imageio
 
-MAX_FRAMES_PREVIEW = 3
-# Increased resolution for better-looking crops
+MAX_FRAMES_PREVIEW = 25
 FRAME_WIDTH, FRAME_HEIGHT = 128, 128
 
 
@@ -24,7 +23,6 @@ def load_face_mesh():
 
 
 def extract_lip_region(frame, face_mesh, debug_info, frame_count):
-    """Detects lips using MediaPipe FaceMesh and returns cropped lip region."""
     try:
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     except Exception as ex:
@@ -89,10 +87,7 @@ def extract_lip_region(frame, face_mesh, debug_info, frame_count):
 
 
 def process_preview_frames(video_path, max_frames=MAX_FRAMES_PREVIEW):
-    """
-    Reads the video at `video_path`, extracts up to `max_frames` lip crops,
-    and returns (lip_frames, lips_found, debug_info).
-    """
+
     debug_info = []
     lip_frames = []
     lips_found = False
@@ -136,24 +131,40 @@ def process_preview_frames(video_path, max_frames=MAX_FRAMES_PREVIEW):
     return lip_frames, lips_found, debug_info
 
 
-def create_preview_gif(frames, output_path):
-    """Create a GIF preview of the video"""
+def create_preview_gif(frames, output_path, num_loops=8, fps=10, scale=2):
+    
+    # Normalize to 0–255 and convert to uint8
     frames_uint8 = (
         (frames - frames.min()) /
-        (frames.max() - frames.min()) * 255
+        (frames.max() - frames.min() + 1e-8) * 255
     ).astype(np.uint8)
+
+    # (T, H, W, 1) -> (T, H, W)
     frames_uint8 = np.squeeze(frames_uint8, axis=-1)
-    imageio.mimsave(output_path, frames_uint8, fps=10)
+
+    # Upscale each frame so the GIF appears larger
+    t, h, w = frames_uint8.shape
+    upscaled_frames = [
+        cv2.resize(frame, (w * scale, h * scale), interpolation=cv2.INTER_NEAREST)
+        for frame in frames_uint8
+    ]
+
+    # Repeat the short sequence multiple times for a longer looping animation
+    all_frames = upscaled_frames * num_loops
+
+    # loop=0 = infinite loop
+    imageio.mimsave(output_path, all_frames, fps=fps, loop=0)
 
 
 def main():
-    st.title("👄 Lip Region Preview")
+    st.title("Lip Reading Preview")
 
     st.markdown(
         f"""
         1. Upload a video of a speaking face (**mp4 / avi / mov / mpg / mpeg**).
         2. Click **Let's Start!** to extract up to **{MAX_FRAMES_PREVIEW}** lip frames.
-        3. View an animated black-and-white GIF preview and individual frames.
+        3. View an animated black-and-white GIF preview and sample frames.
+        4. Observe the predicted text output (placeholder for now).
         """
     )
 
@@ -177,8 +188,23 @@ def main():
             if lips_found and len(lip_frames) > 0:
                 st.success(f"Cropped lips from {len(lip_frames)} frames!")
 
-                # ========= GIF ON TOP =========
-                st.markdown("### 🎞 Lip Preview GIF")
+                st.markdown("### Sample Cropped Lip Frames")
+
+                num_display = min(5, len(lip_frames))
+                step = max(1, len(lip_frames) // num_display)
+                display_frames = [
+                    lip_frames[i] for i in range(0, len(lip_frames), step)
+                ][:num_display]
+
+                cols = st.columns(len(display_frames))
+                for i, frame in enumerate(display_frames):
+                    cols[i].image(
+                        frame,
+                        caption=f"Frame {i * step + 1}",
+                        use_container_width=True,
+                    )
+
+                st.markdown("### Grayscale Preview GIF & Predicted Output")
 
                 # Convert lip_frames (RGB) -> grayscale float32, shape (T, H, W, 1)
                 frames_gray = [
@@ -188,18 +214,30 @@ def main():
                 frames_gray = frames_gray[..., np.newaxis]
 
                 gif_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".gif")
-                create_preview_gif(frames_gray, gif_temp.name)
+                create_preview_gif(frames_gray, gif_temp.name, scale=2)
 
-                # Read bytes so Streamlit definitely plays the animation
                 with open(gif_temp.name, "rb") as f:
                     gif_bytes = f.read()
-                st.image(gif_bytes, caption="Lip Region GIF Preview")
 
-                # ========= INDIVIDUAL FRAMES BELOW =========
-                st.markdown("### 📸 Cropped Lip Frames")
-                cols = st.columns(len(lip_frames))
-                for i, frame in enumerate(lip_frames):
-                    cols[i].image(frame, caption=f"Frame {i + 1}", use_container_width=True)
+                # Placeholder
+                predicted_text = "Predicted text will appear here once the model/output is available."
+
+                gif_col, text_col = st.columns([1, 1])
+
+                with gif_col:
+                    st.image(
+                        gif_bytes,
+                        caption="Lip Region GIF Preview",
+                        width=320,
+                    )
+
+                with text_col:
+                    st.markdown("**Predicted Output**")
+                    st.text_area(
+                        "Predicted transcription:",
+                        value=predicted_text,
+                        height=150,
+                    )
 
             else:
                 st.warning("No lips detected in the video.")

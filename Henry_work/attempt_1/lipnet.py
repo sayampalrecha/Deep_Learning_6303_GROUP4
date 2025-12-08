@@ -1,11 +1,9 @@
 # LipNet attempt w/ one speaker (s1) - Henry Hirsch
 
-
 # 0. install and import dependencies
 
-# !pip list
-
-# !pip install opencv-python matplotlib imageio gdown tensorflow
+#pip install opencv-python matplotlib imageio gdown tensorflow
+#pip list
 
 import os
 import cv2
@@ -237,11 +235,6 @@ model.fit(train, validation_data=test, epochs=100, callbacks=[checkpoint_callbac
 
 
 # 5. make prediction
-
-url = 'https://drive.google.com/uc?id=1vWscXs4Vt0a_1IH1-ct2TCgXAZT-N3_Y' # download model checkpoints if needed
-output = 'checkpoints.zip'
-gdown.download(url, output, quiet=False)
-gdown.extractall('checkpoints.zip', 'models')
 
 model.load_weights('models/checkpoint.weights.h5') # load model checkpoint weights
 
