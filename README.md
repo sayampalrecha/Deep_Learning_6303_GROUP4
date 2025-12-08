@@ -1,2 +1,15 @@
 # Deep_Learning_6303_GROUP4
-Deep Learning Fall 2025 project for group 4 
+A lightweight implementation of LipNet, a deep-learning model for lip-reading from video. <br>
+This version focuses on simplicity by using less speaker than original paper while demonstrating core concepts:
+video preprocessing, spatiotemporal feature extraction, and sequence prediction.
+
+# Input data 
+![pbao9s](https://github.com/user-attachments/assets/4aed833a-993f-4500-a9ab-45aadbf80d04)
+
+![lwip5p](https://github.com/user-attachments/assets/3bf27b62-f0bc-4970-ad18-bc70b751d84f)
+
+# Preprocessing steps 
+<img width="824" height="201" alt="image" src="https://github.com/user-attachments/assets/9e52e0eb-8e1c-4925-9fda-ccdf7af5aa7b" />
+
+# Model Architecture
+<img width="609" height="201" alt="image" src="https://github.com/user-attachments/assets/e85b3ad0-4804-4bd1-b06d-b0b90c1fd1cb" />
