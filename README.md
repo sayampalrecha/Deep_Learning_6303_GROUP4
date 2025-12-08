@@ -11,5 +11,8 @@ video preprocessing, spatiotemporal feature extraction, and sequence prediction.
 # Preprocessing steps 
 <img width="824" height="201" alt="image" src="https://github.com/user-attachments/assets/9e52e0eb-8e1c-4925-9fda-ccdf7af5aa7b" />
 
+# LipNet Research Paper 
+[LipNet Paper](https://arxiv.org/abs/1611.01599)
+
+
 # Model Architecture
-<img width="609" height="201" alt="image" src="https://github.com/user-attachments/assets/e85b3ad0-4804-4bd1-b06d-b0b90c1fd1cb" />
